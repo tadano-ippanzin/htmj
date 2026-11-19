@@ -1,0 +1,2022 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HTMJ Studio — Hyper Text MarkUp Japanese リアルタイムエディタ</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/typescript@5.6.3/lib/typescript.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --font-sans: 'Inter', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Noto Sans JP', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      overscroll-behavior: none;
+    }
+    .font-mono-jp {
+      font-family: var(--font-mono);
+      font-variant-ligatures: none;
+    }
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    /* Editor line highlight flash */
+    @keyframes errorFlash {
+      0% { background-color: rgba(239, 68, 68, 0.35); }
+      100% { background-color: rgba(239, 68, 68, 0.12); }
+    }
+    .line-highlight-flash {
+      animation: errorFlash 1.4s ease-out forwards;
+    }
+    /* Resizer active state */
+    .resizer-active {
+      background-color: #4f46e5 !important;
+    }
+    /* AST Tree lines */
+    .ast-children {
+      border-left: 1px dashed #cbd5e1;
+      margin-left: 0.75rem;
+      padding-left: 0.75rem;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden">
+
+  <!-- Top Toolbar -->
+  <header class="bg-slate-900 text-white border-b border-slate-800 px-3 sm:px-4 py-2 flex items-center justify-between gap-2 shrink-0">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-sm tracking-tight shrink-0 shadow-sm">
+        和
+      </div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <h1 class="font-semibold text-sm sm:text-base tracking-tight truncate">HTMJ Studio</h1>
+          <span class="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+            v1.0 準拠
+          </span>
+        </div>
+        <p class="hidden md:block text-[11px] text-slate-400 truncate">Hyper Text MarkUp Japanese リアルタイムコンパイラ &amp; マルチビューエディタ</p>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="flex items-center gap-1.5 flex-wrap justify-end">
+      <!-- Sample Selector -->
+      <select id="sampleSelect" aria-label="サンプルテンプレートを選択" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-md px-2 py-1.5 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer">
+        <option value="" selected>テンプレート...</option>
+        <option value="spec">サンプル: 公式仕様デモ</option>
+        <option value="vertical">サンプル: 縦書き・青空ルビー</option>
+        <option value="business">サンプル: 業務フォーム &amp; 表</option>
+        <option value="error_demo">サンプル: 構文エラー検知テスト</option>
+      </select>
+
+      <!-- HTMJ Upload & Download -->
+      <div class="inline-flex rounded-md shadow-xs overflow-hidden border border-slate-700">
+        <label for="fileImport" title="HTMJファイルをアップロード" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer transition-colors border-r border-slate-700">
+          <span>HTMJ読込</span>
+          <input id="fileImport" type="file" accept=".htmj,.txt" class="hidden" />
+        </label>
+        <button id="btnDownloadHtmj" type="button" title="HTMJファイルをダウンロード" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-emerald-300 cursor-pointer transition-colors">
+          <span>HTMJ保存</span>
+        </button>
+      </div>
+
+      <!-- HTML Upload & Download -->
+      <div class="inline-flex rounded-md shadow-xs overflow-hidden border border-indigo-500/50">
+        <label for="htmlImport" title="HTMLファイルをアップロードしてHTMJに変換" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium bg-indigo-700 hover:bg-indigo-600 text-white cursor-pointer transition-colors border-r border-indigo-500/50">
+          <span>HTML読込</span>
+          <input id="htmlImport" type="file" accept=".html,.htm" class="hidden" />
+        </label>
+        <button id="btnDownloadHtml" type="button" title="コンパイル済みHTML5をダウンロード" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer transition-colors">
+          <span>HTML保存</span>
+        </button>
+      </div>
+
+      <!-- Reference Drawer Toggle -->
+      <button id="btnToggleRef" type="button" class="inline-flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer">
+        <span class="hidden sm:inline">リファレンス</span>
+        <span class="sm:hidden">辞書</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Split Pane Workspace -->
+  <main id="workspace" class="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden relative">
+
+    <!-- Left Pane: HTMJ Editor -->
+    <section id="editorPane" class="flex flex-col min-h-0 min-w-0 bg-white border-b lg:border-b-0 lg:border-r border-slate-200" style="flex: 1 1 50%;">
+      <!-- Editor Subheader -->
+      <div class="bg-slate-100 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between gap-2 shrink-0">
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-xs font-semibold text-slate-700">HTMJ ソース</span>
+          <span id="compileStatus" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 text-emerald-800">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            正常
+          </span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <label class="inline-flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer select-none">
+            <input id="toggleAutoPair" type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+            <span>括弧自動補完</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Touch-friendly Symbol & Snippet Assist Bar -->
+      <div class="bg-slate-50 border-b border-slate-200 px-2 py-1.5 flex items-center gap-1.5 overflow-x-auto shrink-0">
+        <!-- Smart Close Button -->
+        <button id="btnSmartClose" type="button" class="hidden px-2.5 py-1 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded shadow-sm shrink-0 cursor-pointer transition-colors"></button>
+
+        <!-- One-tap Symbol Pair Buttons (cursor placed inside) -->
+        <button type="button" data-insert="（、）" data-cursor="1" class="assist-btn px-2.5 py-1 text-xs font-mono-jp font-medium bg-white hover:bg-indigo-50 text-slate-800 border border-slate-300 rounded shadow-2xs shrink-0 cursor-pointer">（、）</button>
+        <button type="button" data-insert="「」" data-cursor="1" class="assist-btn px-2.5 py-1 text-xs font-mono-jp font-medium bg-white hover:bg-indigo-50 text-slate-800 border border-slate-300 rounded shadow-2xs shrink-0 cursor-pointer">「」</button>
+        <button type="button" data-insert="は「」" data-cursor="2" class="assist-btn px-2.5 py-1 text-xs font-mono-jp font-medium bg-white hover:bg-indigo-50 text-slate-800 border border-slate-300 rounded shadow-2xs shrink-0 cursor-pointer">は「」</button>
+        <button type="button" data-insert="、" data-cursor="1" class="assist-btn px-2.5 py-1 text-xs font-mono-jp font-medium bg-white hover:bg-indigo-50 text-slate-800 border border-slate-300 rounded shadow-2xs shrink-0 cursor-pointer">、</button>
+        <button type="button" data-insert="。" data-cursor="1" class="assist-btn px-2.5 py-1 text-xs font-mono-jp font-medium bg-white hover:bg-indigo-50 text-slate-800 border border-slate-300 rounded shadow-2xs shrink-0 cursor-pointer">。</button>
+        <button type="button" data-insert="｜《》" data-cursor="1" class="assist-btn px-2.5 py-1 text-xs font-mono-jp font-medium bg-white hover:bg-indigo-50 text-slate-800 border border-slate-300 rounded shadow-2xs shrink-0 cursor-pointer">｜《》</button>
+        <button type="button" data-insert="：：" data-cursor="1" class="assist-btn px-2.5 py-1 text-xs font-mono-jp font-medium bg-white hover:bg-indigo-50 text-slate-800 border border-slate-300 rounded shadow-2xs shrink-0 cursor-pointer">：：</button>
+
+        <span class="w-px h-5 bg-slate-300 mx-0.5 shrink-0"></span>
+
+        <!-- Quick Tag Snippets -->
+        <button type="button" data-insert="（ｈ一、）（終、ｈ一。）" data-cursor="5" class="assist-btn px-2.5 py-1 text-xs font-medium bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 rounded shrink-0 cursor-pointer">見出し</button>
+        <button type="button" data-insert="（段、）（終、段。）" data-cursor="4" class="assist-btn px-2.5 py-1 text-xs font-medium bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 rounded shrink-0 cursor-pointer">段落</button>
+        <button type="button" data-insert="（領域、）&#10;  &#10;（終、領域。）" data-cursor="8" class="assist-btn px-2.5 py-1 text-xs font-medium bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 rounded shrink-0 cursor-pointer">領域</button>
+        <button type="button" data-insert="｜漢字《かんじ》" data-cursor="8" class="assist-btn px-2.5 py-1 text-xs font-medium bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 rounded shrink-0 cursor-pointer">ルビー</button>
+        <button type="button" data-insert="：今日：" data-cursor="4" class="assist-btn px-2.5 py-1 text-xs font-medium bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 rounded shrink-0 cursor-pointer">今日</button>
+      </div>
+
+      <!-- Autocomplete Tag Suggestion Strip -->
+      <div id="suggestBar" class="hidden bg-indigo-50 border-b border-indigo-200 px-2 py-1 flex items-center gap-1.5 overflow-x-auto shrink-0"></div>
+
+      <!-- Code Editor Body with Line Numbers -->
+      <div class="relative flex-1 flex min-h-0 overflow-hidden bg-white">
+        <!-- Line Numbers Gutter -->
+        <div id="lineNumbers" aria-hidden="true" class="w-12 py-3 pr-2 text-right font-mono-jp text-[13px] leading-6 text-slate-400 bg-slate-50 border-r border-slate-200 select-none overflow-hidden shrink-0">
+          1
+        </div>
+        <!-- Highlight Overlay + Textarea -->
+        <div class="relative flex-1 min-w-0 overflow-hidden">
+          <div id="lineHighlightLayer" aria-hidden="true" class="absolute inset-0 pointer-events-none py-3 font-mono-jp text-[13px] leading-6 overflow-hidden"></div>
+          <textarea
+            id="htmjInput"
+            spellcheck="false"
+            aria-label="HTMJコードエディタ"
+            placeholder="ここにHTMJコードを入力してください（例：（ｈ一、）こんにちは（終、ｈ一。））"
+            class="relative z-10 w-full h-full py-3 px-3 font-mono-jp text-[13px] leading-6 text-slate-800 bg-transparent resize-none focus:outline-none overflow-auto whitespace-pre"
+          ></textarea>
+        </div>
+      </div>
+
+      <!-- Syntax Error Panel (Collapsible / Auto-shown on Error) -->
+      <div id="errorPanel" class="hidden border-t border-red-200 bg-red-50 max-h-24 sm:max-h-36 overflow-y-auto shrink-0">
+        <div class="px-3 py-1.5 bg-red-100/80 border-b border-red-200 flex items-center justify-between">
+          <span class="text-xs font-semibold text-red-800 flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            構文エラー検知 (<span id="errorCount">0</span>件) — クリックで該当行へジャンプ
+          </span>
+        </div>
+        <ul id="errorList" class="divide-y divide-red-200/70"></ul>
+      </div>
+
+      <!-- Editor Footer -->
+      <div class="bg-slate-50 border-t border-slate-200 px-3 py-1 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
+        <div class="flex items-center gap-3">
+          <span id="cursorPos">行 1, 列 1</span>
+          <span id="charStats">0 文字 / 0 行</span>
+        </div>
+        <div>デバウンス: 300ms | UTF-8</div>
+      </div>
+    </section>
+
+    <!-- Draggable Split Pane Resizer -->
+    <div id="splitResizer" role="separator" aria-orientation="vertical" title="ドラッグして幅を調整" class="hidden lg:flex w-1.5 bg-slate-200 hover:bg-indigo-400 cursor-col-resize items-center justify-center transition-colors shrink-0 z-20">
+      <div class="w-0.5 h-8 bg-slate-400 rounded-full"></div>
+    </div>
+
+    <!-- Right Pane: Multi-View Preview -->
+    <section id="previewPane" class="flex flex-col min-h-0 min-w-0 bg-white" style="flex: 1 1 50%;">
+      <!-- Multi-View Tabs -->
+      <div class="bg-slate-100 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between gap-2 shrink-0">
+        <div class="flex items-center gap-1" role="tablist" aria-label="マルチビュー切り替え">
+          <button type="button" role="tab" aria-selected="true" data-view="web" class="view-tab px-2.5 py-1 rounded-md text-xs font-medium bg-white text-indigo-700 shadow-sm border border-slate-200 transition-all cursor-pointer">
+            Web表示ビュー
+          </button>
+          <button type="button" role="tab" aria-selected="false" data-view="html" class="view-tab px-2.5 py-1 rounded-md text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 transition-all cursor-pointer">
+            HTML5ソース
+          </button>
+          <button type="button" role="tab" aria-selected="false" data-view="ast" class="view-tab px-2.5 py-1 rounded-md text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 transition-all cursor-pointer">
+            AST構文木
+          </button>
+        </div>
+
+        <div class="flex items-center gap-1.5">
+          <button id="btnCopyHtml" type="button" class="hidden inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition-colors cursor-pointer">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            コピー
+          </button>
+          <label id="toggleDefaultCssWrap" class="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer select-none">
+            <input id="toggleDefaultCss" type="checkbox" checked class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+            <span>標準CSS適用</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- View Containers -->
+      <div class="flex-1 min-h-0 relative overflow-hidden">
+        <!-- 1. Web View (Sandboxed iframe) -->
+        <div id="viewWeb" class="w-full h-full bg-white">
+          <iframe
+            id="previewFrame"
+            title="HTMJ リアルタイムWebプレビュー"
+            sandbox="allow-scripts"
+            class="w-full h-full border-0 bg-white"
+          ></iframe>
+        </div>
+
+        <!-- 2. HTML5 Code View -->
+        <div id="viewHtml" class="hidden w-full h-full overflow-auto bg-slate-900 text-slate-100 p-4">
+          <pre id="htmlCodeOutput" class="font-mono-jp text-[12.5px] leading-relaxed whitespace-pre-wrap break-all"></pre>
+        </div>
+
+        <!-- 3. AST Tree View -->
+        <div id="viewAst" class="hidden w-full h-full overflow-auto bg-slate-50 p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-600">抽象構文木 (Element / Text / Attributes / Macro)</span>
+            <div class="flex items-center gap-2">
+              <button id="btnExpandAllAst" type="button" class="text-[11px] text-indigo-600 hover:underline cursor-pointer">すべて展開</button>
+              <button id="btnCollapseAllAst" type="button" class="text-[11px] text-slate-500 hover:underline cursor-pointer">折りたたむ</button>
+            </div>
+          </div>
+          <div id="astTreeContainer" class="font-mono-jp text-xs space-y-1"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide-over Reference Drawer -->
+    <aside id="refDrawer" class="hidden absolute top-0 right-0 bottom-0 w-full sm:w-96 bg-white border-l border-slate-200 shadow-2xl z-30 flex flex-col">
+      <div class="px-4 py-3 bg-slate-900 text-white flex items-center justify-between shrink-0">
+        <h2 class="text-sm font-semibold">HTMJ v1.0 構文リファレンス</h2>
+        <button id="btnCloseRef" type="button" aria-label="リファレンスを閉じる" class="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-4 space-y-4 text-xs text-slate-700">
+        <div>
+          <h3 class="font-bold text-slate-900 mb-1.5">基本構文ルール</h3>
+          <ul class="space-y-1 list-disc pl-4 text-slate-600">
+            <li>開始タグ: 末尾を読点 <code class="bg-slate-100 px-1 rounded">、）</code> で閉じる</li>
+            <li>終了タグ: 句点を使い <code class="bg-slate-100 px-1 rounded">（終、要素名。）</code></li>
+            <li>自己完結タグ: 末尾を句点 <code class="bg-slate-100 px-1 rounded">。）</code> で閉じる</li>
+            <li>属性表記: <code class="bg-slate-100 px-1 rounded">属性名 は「値」</code></li>
+            <li>外枠省略: <code class="bg-slate-100 px-1 rounded">（ｈｔｍｊ、）</code> などを省略すると自動で HTML5 外枠を補完</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="font-bold text-slate-900 mb-1.5">拡張ショートカット &amp; マクロ</h3>
+          <ul class="space-y-1.5 text-slate-600">
+            <li><span class="font-semibold text-slate-800">青空文庫風ルビー:</span> <code class="bg-slate-100 px-1 rounded">｜漢字《かんじ》</code></li>
+            <li><span class="font-semibold text-slate-800">定数マクロ定義:</span> <code class="bg-slate-100 px-1 rounded">（定義、名 は「著者」、値 は「山田太郎」。）</code></li>
+            <li><span class="font-semibold text-slate-800">定数マクロ参照:</span> <code class="bg-slate-100 px-1 rounded">：著者：</code>（<code class="bg-slate-100 px-1 rounded">《著者》</code> も可）</li>
+            <li><span class="font-semibold text-slate-800">自動日付マクロ:</span> <code class="bg-slate-100 px-1 rounded">：今日：</code> <code class="bg-slate-100 px-1 rounded">：今年：</code> <code class="bg-slate-100 px-1 rounded">：今月：</code> <code class="bg-slate-100 px-1 rounded">：日付：</code> <code class="bg-slate-100 px-1 rounded">：週：</code> <code class="bg-slate-100 px-1 rounded">：曜日：</code></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="font-bold text-slate-900 mb-1.5">主要タグ一覧</h3>
+          <div class="border border-slate-200 rounded-md overflow-hidden">
+            <table class="w-full text-left border-collapse">
+              <thead class="bg-slate-100 text-slate-700">
+                <tr>
+                  <th class="p-1.5 border-b border-slate-200">HTMJ</th>
+                  <th class="p-1.5 border-b border-slate-200">HTML5</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 font-mono-jp text-[11px]">
+                <tr><td class="p-1.5">（文書タイプ、「htmj」！）</td><td class="p-1.5">&lt;!DOCTYPE html&gt;</td></tr>
+                <tr><td class="p-1.5">（ｈｔｍｊ、言語 は「日本語」、）</td><td class="p-1.5">&lt;html lang="ja"&gt;</td></tr>
+                <tr><td class="p-1.5">（設定、）/（情報、...。）/（タイトル、）</td><td class="p-1.5">&lt;head&gt; / &lt;meta&gt; / &lt;title&gt;</td></tr>
+                <tr><td class="p-1.5">（記、）/（記、縦書き、）</td><td class="p-1.5">&lt;body&gt; / 縦書きCSS</td></tr>
+                <tr><td class="p-1.5">（ｈ一、）〜（ｈ六、）</td><td class="p-1.5">&lt;h1&gt;〜&lt;h6&gt;</td></tr>
+                <tr><td class="p-1.5">（段、）/（段落、）</td><td class="p-1.5">&lt;p&gt;</td></tr>
+                <tr><td class="p-1.5">（箇条、）/（順箇条、）/（項目、）</td><td class="p-1.5">&lt;ul&gt; / &lt;ol&gt; / &lt;li&gt;</td></tr>
+                <tr><td class="p-1.5">（リンク、アドレス は「URL」、）</td><td class="p-1.5">&lt;a href="URL"&gt;</td></tr>
+                <tr><td class="p-1.5">（画像、ファイル は「src」、）</td><td class="p-1.5">&lt;img src="..."&gt;</td></tr>
+                <tr><td class="p-1.5">（表、）/（行、）/（見出し格、）/（格、）</td><td class="p-1.5">&lt;table&gt;/&lt;tr&gt;/&lt;th&gt;/&lt;td&gt;</td></tr>
+                <tr><td class="p-1.5">（ルビー、振 は「ルビー」、）</td><td class="p-1.5">&lt;ruby&gt;...&lt;rt&gt;...&lt;/rt&gt;&lt;/ruby&gt;</td></tr>
+                <tr><td class="p-1.5">（折りたたみ、見出し は「題」、）</td><td class="p-1.5">&lt;details&gt;&lt;summary&gt;...</td></tr>
+                <tr><td class="p-1.5">（引用、出所 は「出典」、）</td><td class="p-1.5">&lt;blockquote cite="..."&gt;</td></tr>
+                <tr><td class="p-1.5">（領域、クラス は「...」、種別 は「警告」、）</td><td class="p-1.5">&lt;div class="..."&gt;</td></tr>
+                <tr><td class="p-1.5">（ｃｓｓ、）/（ｊｓ、）/（ｔｓ、）</td><td class="p-1.5">&lt;style&gt; / &lt;script&gt; (TS変換)</td></tr>
+                <tr><td class="p-1.5">（フォーム、）/（入力、...）/（ボタン、...）</td><td class="p-1.5">&lt;form&gt;/&lt;input&gt;/&lt;button&gt;</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="pointer-events-none fixed bottom-5 right-5 z-50 opacity-0 translate-y-2 transition-all duration-200 bg-slate-900 text-white text-xs font-medium px-3.5 py-2.5 rounded-lg shadow-lg border border-slate-700"></div>
+
+  <script>
+    // =========================================================================
+    // 1. HTMJ Compiler (Tokenizer -> Parser/AST -> Macro Expander -> HTML5 Gen)
+    // =========================================================================
+    const HTMJCompiler = (() => {
+      // Full-width to half-width helper for tag names & numbers
+      function normalizeTagName(raw) {
+        let s = raw.trim();
+        // Convert full-width ASCII to half-width
+        s = s.replace(/[\uFF01-\uFF5E]/g, (ch) =>
+          String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)
+        );
+        // Normalize h一〜h六
+        const kanjiNum = { '一': '1', '二': '2', '三': '3', '四': '4', '五': '5', '六': '6' };
+        s = s.replace(/^h([一二三四五六])$/i, (_, k) => 'h' + kanjiNum[k]);
+        return s.toLowerCase();
+      }
+
+      const TAG_MAP = {
+        'htmj': 'html',
+        '設定': 'head',
+        '情報': 'meta',
+        'タイトル': 'title',
+        '記': 'body',
+        'h1': 'h1', 'h2': 'h2', 'h3': 'h3', 'h4': 'h4', 'h5': 'h5', 'h6': 'h6',
+        '段': 'p', '段落': 'p',
+        '箇条': 'ul', '順箇条': 'ol', '項目': 'li',
+        'リンク': 'a',
+        '画像': 'img',
+        '表': 'table', '行': 'tr', '見出し格': 'th', '格': 'td',
+        'ルビー': 'ruby',
+        '折りたたみ': 'details',
+        '引用': 'blockquote',
+        '領域': 'div',
+        'フォーム': 'form',
+        '入力': 'input',
+        'ボタン': 'button',
+        '今日': 'time',
+        '今年': 'time',
+        '今月': 'time',
+        '日付': 'time',
+        '週': 'time',
+        '曜日': 'span',
+        '定義': 'macro-define',
+        'css': 'style',
+        'js': 'script',
+        'ts': 'script',
+        '上部': 'header',
+        '主文': 'main',
+        '節': 'section',
+        '補足': 'aside',
+        '句': 'span',
+        'ラベル': 'label',
+        '選択': 'select',
+        '選択肢': 'option',
+        '埋込枠': 'iframe',
+        '複数行入力': 'textarea',
+        '整形': 'pre',
+        'コード': 'code',
+        '改行': 'br',
+        '区切り': 'hr'
+      };
+
+      const VOID_HTML_TAGS = new Set(['meta', 'img', 'input', 'br', 'hr']);
+
+      const ATTR_VALUE_MAP = {
+        lang: { '日本語': 'ja', '英語': 'en', '中国語': 'zh', '韓国語': 'ko' },
+        type: {
+          '文字': 'text', 'テキスト': 'text',
+          'パスワード': 'password', 'メール': 'email', '数値': 'number',
+          '送信': 'submit', 'リセット': 'reset', 'ボタン': 'button',
+          'チェック': 'checkbox', 'ラジオ': 'radio', '日付': 'date'
+        },
+        alert: {
+          'お知らせ': 'info', '情報': 'info',
+          '警告': 'warning', '注意': 'warning',
+          '成功': 'success', '完了': 'success',
+          '危険': 'danger', 'エラー': 'danger'
+        }
+      };
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function computeLineStarts(text) {
+        const starts = [0];
+        for (let i = 0; i < text.length; i++) {
+          if (text[i] === '\n') starts.push(i + 1);
+        }
+        return starts;
+      }
+
+      function indexToLineCol(lineStarts, idx) {
+        let lo = 0, hi = lineStarts.length - 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (lineStarts[mid] <= idx) lo = mid + 1;
+          else hi = mid - 1;
+        }
+        const line = hi + 1;
+        const col = idx - lineStarts[hi] + 1;
+        return { line, col };
+      }
+
+      // Parse attributes inside a tag body (after first comma)
+      function parseAttributes(parts, tagName, line, errors) {
+        const attrs = {};
+        const flags = [];
+        for (const rawPart of parts) {
+          const part = rawPart.trim();
+          if (!part) continue;
+          // Match: 属性名 は「値」 (allow optional spaces around は)
+          const m = part.match(/^(.+?)\s+は\s*「([^」]*)」$/) || part.match(/^(.+?)は「([^」]*)」$/);
+          if (m) {
+            const key = m[1].trim();
+            const val = m[2];
+            attrs[key] = val;
+          } else if (['縦書き', '選択済', 'チェック済', '隠し', '読み取り専用'].includes(part)) {
+            flags.push(part);
+          } else if (/^「([^」]*)」$/.test(part)) {
+            attrs._literal = part.slice(1, -1);
+          } else {
+            errors.push({
+              line,
+              message: `タグ「${tagName}」の属性表記が不正です: "${part}"（「属性名 は「値」」の形式で記述してください）`
+            });
+          }
+        }
+        return { attrs, flags };
+      }
+
+      // Tokenize HTMJ source into Tag tokens and Text tokens
+      function tokenize(source, errors) {
+        const tokens = [];
+        const lineStarts = computeLineStarts(source);
+        let pos = 0;
+        const len = source.length;
+
+        while (pos < len) {
+          const openIdx = findNextOpenParen(source, pos);
+          if (openIdx === -1) {
+            const text = source.slice(pos);
+            if (text) {
+              tokens.push({ type: 'TEXT', value: text, line: indexToLineCol(lineStarts, pos).line });
+            }
+            break;
+          }
+
+          if (openIdx > pos) {
+            const text = source.slice(pos, openIdx);
+            tokens.push({ type: 'TEXT', value: text, line: indexToLineCol(lineStarts, pos).line });
+          }
+
+          const startLoc = indexToLineCol(lineStarts, openIdx);
+          const closeIdx = findMatchingCloseParen(source, openIdx);
+          if (closeIdx === -1) {
+            errors.push({
+              line: startLoc.line,
+              message: `閉じ括弧「）」が見つかりません（${startLoc.line}行目）`
+            });
+            break;
+          }
+
+          const inner = source.slice(openIdx + 1, closeIdx);
+          const trimmed = inner.trim();
+
+          if (!trimmed) {
+            errors.push({ line: startLoc.line, message: `空のタグ「（）」が記述されています` });
+            pos = closeIdx + 1;
+            continue;
+          }
+
+          // Determine tag kind by trailing punctuation: ！ / 、 / 。
+          const lastChar = trimmed[trimmed.length - 1];
+          let kind = null;
+          if (lastChar === '！' || lastChar === '!') kind = 'DOCTYPE';
+          else if (lastChar === '、' || lastChar === ',') kind = 'OPEN';
+          else if (lastChar === '。' || lastChar === '.') kind = 'CLOSE_OR_SELF';
+          else {
+            errors.push({
+              line: startLoc.line,
+              message: `タグ末尾は読点「、」（開始）、句点「。」（終了/単独）、または「！」（文書宣言）で閉じる必要があります: （${trimmed}）`
+            });
+            pos = closeIdx + 1;
+            continue;
+          }
+
+          const bodyWithoutEnd = trimmed.slice(0, -1).trim();
+          const parts = splitTopLevelCommas(bodyWithoutEnd);
+          const rawHead = (parts[0] || '').trim();
+          const normHead = normalizeTagName(rawHead);
+
+          if (kind === 'DOCTYPE') {
+            tokens.push({
+              type: 'DOCTYPE',
+              rawName: rawHead,
+              parts: parts.slice(1),
+              line: startLoc.line
+            });
+          } else if (normHead === '終') {
+            if (kind !== 'CLOSE_OR_SELF') {
+              errors.push({
+                line: startLoc.line,
+                message: `終了タグは句点「。」で閉じる必要があります: （${trimmed}）`
+              });
+            }
+            const targetRaw = (parts[1] || '').trim();
+            if (!targetRaw) {
+              errors.push({
+                line: startLoc.line,
+                message: `終了タグに対象の要素名が指定されていません: （${trimmed}）`
+              });
+            } else {
+              tokens.push({
+                type: 'CLOSE',
+                rawName: targetRaw,
+                name: normalizeTagName(targetRaw),
+                line: startLoc.line
+              });
+            }
+          } else {
+            const { attrs, flags } = parseAttributes(parts.slice(1), rawHead, startLoc.line, errors);
+            const htmlTag = TAG_MAP[normHead];
+            if (!htmlTag) {
+              errors.push({
+                line: startLoc.line,
+                message: `未知のHTMJタグです: 「${rawHead}」`
+              });
+            }
+            const isSelfClosing = (kind === 'CLOSE_OR_SELF') || VOID_HTML_TAGS.has(htmlTag);
+            tokens.push({
+              type: isSelfClosing ? 'SELF' : 'OPEN',
+              rawName: rawHead,
+              name: normHead,
+              htmlTag: htmlTag || rawHead,
+              attrs,
+              flags,
+              line: startLoc.line
+            });
+          }
+
+          pos = closeIdx + 1;
+
+          // Raw text mode for css / js / ts blocks so (), <> inside code are not parsed as HTMJ tags
+          if (tokens.length > 0) {
+            const lastTok = tokens[tokens.length - 1];
+            if (lastTok.type === 'OPEN' && (lastTok.name === 'css' || lastTok.name === 'js' || lastTok.name === 'ts')) {
+              const rawStart = pos;
+              const endRe = new RegExp(`[（(]\s*終\s*[、,]\s*(?:${lastTok.name}|${lastTok.rawName})\s*[。.]\s*[）)]`, 'i');
+              const rest = source.slice(rawStart);
+              const endMatch = endRe.exec(rest);
+              if (endMatch) {
+                const rawContent = rest.slice(0, endMatch.index);
+                if (rawContent) {
+                  tokens.push({
+                    type: 'RAW_TEXT',
+                    value: rawContent,
+                    line: indexToLineCol(lineStarts, rawStart).line
+                  });
+                }
+                pos = rawStart + endMatch.index;
+              }
+            }
+          }
+        }
+
+        return tokens;
+      }
+
+      function findNextOpenParen(str, from) {
+        for (let i = from; i < str.length; i++) {
+          if (str[i] === '（' || str[i] === '(') return i;
+        }
+        return -1;
+      }
+
+      function findMatchingCloseParen(str, openIdx) {
+        let inQuote = false;
+        for (let i = openIdx + 1; i < str.length; i++) {
+          const ch = str[i];
+          if (ch === '「') inQuote = true;
+          else if (ch === '」') inQuote = false;
+          else if (!inQuote && (ch === '）' || ch === ')')) return i;
+          else if (!inQuote && (ch === '（' || ch === '(')) {
+            // Unclosed previous tag before new tag starts
+            return -1;
+          }
+        }
+        return -1;
+      }
+
+      function splitTopLevelCommas(str) {
+        const res = [];
+        let buf = '';
+        let inQuote = false;
+        for (let i = 0; i < str.length; i++) {
+          const ch = str[i];
+          if (ch === '「') inQuote = true;
+          else if (ch === '」') inQuote = false;
+          if (!inQuote && (ch === '、' || ch === ',')) {
+            res.push(buf);
+            buf = '';
+          } else {
+            buf += ch;
+          }
+        }
+        res.push(buf);
+        return res;
+      }
+
+      // Build AST from tokens
+      function parse(tokens, errors) {
+        const root = { type: 'Document', children: [] };
+        const stack = [root];
+        const macros = {};
+
+        for (const tok of tokens) {
+          const current = stack[stack.length - 1];
+
+          if (tok.type === 'TEXT') {
+            // Skip pure whitespace text nodes at top-level or between block tags if empty
+            if (tok.value.trim().length > 0) {
+              current.children.push({
+                type: 'Text',
+                value: tok.value,
+                line: tok.line
+              });
+            }
+          } else if (tok.type === 'RAW_TEXT') {
+            current.children.push({
+              type: 'RawText',
+              value: tok.value,
+              line: tok.line
+            });
+          } else if (tok.type === 'DOCTYPE') {
+            current.children.push({
+              type: 'Doctype',
+              name: 'html',
+              rawName: tok.rawName,
+              line: tok.line
+            });
+          } else if (tok.type === 'SELF') {
+            if (tok.name === '定義') {
+              const mName = tok.attrs['名'];
+              const mVal = tok.attrs['値'];
+              if (!mName || mVal === undefined) {
+                errors.push({
+                  line: tok.line,
+                  message: `定数マクロ定義には「名」と「値」属性が必要です`
+                });
+              } else {
+                macros[mName] = mVal;
+                current.children.push({
+                  type: 'MacroDefine',
+                  name: mName,
+                  value: mVal,
+                  line: tok.line
+                });
+              }
+            } else {
+              current.children.push({
+                type: 'Element',
+                htmjTag: tok.rawName,
+                normTag: tok.name,
+                htmlTag: tok.htmlTag,
+                attrs: tok.attrs,
+                flags: tok.flags,
+                selfClosing: true,
+                line: tok.line,
+                children: []
+              });
+            }
+          } else if (tok.type === 'OPEN') {
+            const node = {
+              type: 'Element',
+              htmjTag: tok.rawName,
+              normTag: tok.name,
+              htmlTag: tok.htmlTag,
+              attrs: tok.attrs,
+              flags: tok.flags,
+              selfClosing: false,
+              line: tok.line,
+              children: []
+            };
+            current.children.push(node);
+            stack.push(node);
+          } else if (tok.type === 'CLOSE') {
+            if (stack.length <= 1) {
+              errors.push({
+                line: tok.line,
+                message: `対応する開始タグがない終了タグです: （終、${tok.rawName}。）`
+              });
+              continue;
+            }
+            const top = stack[stack.length - 1];
+            if (top.normTag === tok.name) {
+              stack.pop();
+            } else {
+              // Look up stack to give helpful error
+              const matchIdx = stack.findLastIndex((n) => n.normTag === tok.name);
+              if (matchIdx > 0) {
+                const unclosed = stack.slice(matchIdx + 1).map((n) => `「${n.htmjTag}」(${n.line}行目)`).join(', ');
+                errors.push({
+                  line: top.line,
+                  message: `終了タグ「${tok.rawName}」(${tok.line}行目) の前に ${unclosed} が閉じられていません`
+                });
+                stack.length = matchIdx;
+              } else {
+                errors.push({
+                  line: tok.line,
+                  message: `開始タグと一致しない終了タグです: 期待「${top.htmjTag}」(${top.line}行目)、実際「${tok.rawName}」`
+                });
+              }
+            }
+          }
+        }
+
+        // Any remaining unclosed tags
+        while (stack.length > 1) {
+          const unclosed = stack.pop();
+          errors.push({
+            line: unclosed.line,
+            message: `開始タグ「${unclosed.htmjTag}」が閉じられていません（${unclosed.line}行目）`
+          });
+        }
+
+        return { ast: root, macros };
+      }
+
+      function getBuiltinDateMacros() {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mNum = now.getMonth() + 1;
+        const dNum = now.getDate();
+        const mm = String(mNum).padStart(2, '0');
+        const dd = String(dNum).padStart(2, '0');
+        const isoDate = `${yyyy}-${mm}-${dd}`;
+        const jpDate = `${yyyy}年${mNum}月${dNum}日`;
+        const weekdays = ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'];
+        const weekdayStr = weekdays[now.getDay()];
+        const isoDateUtc = new Date(Date.UTC(yyyy, now.getMonth(), dNum));
+        const dayNum = isoDateUtc.getUTCDay() || 7;
+        isoDateUtc.setUTCDate(isoDateUtc.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(isoDateUtc.getUTCFullYear(), 0, 1));
+        const isoWeekNo = Math.ceil((((isoDateUtc - yearStart) / 86400000) + 1) / 7);
+        const isoWeekStr = `${isoDateUtc.getUTCFullYear()}-W${String(isoWeekNo).padStart(2, '0')}`;
+        return {
+          '今日': `<time datetime="${isoDate}">${jpDate}</time>`,
+          '今年': `<time datetime="${yyyy}">${yyyy}年</time>`,
+          '今月': `<time datetime="${yyyy}-${mm}">${yyyy}年${mNum}月</time>`,
+          '日付': `<time datetime="${isoDate}">${mNum}月${dNum}日</time>`,
+          '週': `<time datetime="${isoWeekStr}">第${isoWeekNo}週</time>`,
+          '曜日': `<span>${weekdayStr}</span>`
+        };
+      }
+
+      // Expand Aozora-style ruby (｜親文字《ルビ》), colon macros (：マクロ名：), and 《変数》
+      function expandInlineText(text, macros, errors, line) {
+        let s = text.replace(/\r?\n\s*/g, ' ').trim();
+        const htmlPlaceholders = [];
+        const stashHtml = (html) => {
+          const idx = htmlPlaceholders.length;
+          htmlPlaceholders.push(html);
+          return `\u0000HTML_${idx}\u0000`;
+        };
+
+        // 1) Aozora ruby: ｜親文字《ルビ》 or |親文字《ルビ》
+        s = s.replace(/[｜|]([^《\n]+?)《([^》\n]+?)》/g, (_, base, rt) =>
+          stashHtml(`<ruby>${escapeHtml(base.trim())}<rt>${escapeHtml(rt.trim())}</rt></ruby>`)
+        );
+
+        // 2) Colon macros: ：マクロ名： (built-in date macros or user-defined constants)
+        const builtinMacros = getBuiltinDateMacros();
+        s = s.replace(/：([^：\n]+?)：/g, (full, key) => {
+          const k = key.trim();
+          if (Object.prototype.hasOwnProperty.call(builtinMacros, k)) {
+            return stashHtml(builtinMacros[k]);
+          }
+          if (Object.prototype.hasOwnProperty.call(macros, k)) {
+            return macros[k];
+          }
+          return full;
+        });
+
+        // 3) Legacy constant macros: 《変数名》
+        s = s.replace(/《([^》\n]+?)》/g, (full, key) => {
+          const k = key.trim();
+          if (Object.prototype.hasOwnProperty.call(macros, k)) {
+            return macros[k];
+          }
+          errors.push({
+            line,
+            message: `未定義の定数マクロ「${k}」が参照されています`
+          });
+          return full;
+        });
+
+        // Escape remaining text and restore stashed HTML
+        s = escapeHtml(s).replace(/\u0000HTML_(\d+)\u0000/g, (_, i) => htmlPlaceholders[Number(i)]);
+        return s;
+      }
+
+      const DEFAULT_STYLE = `<style>
+  body {
+    font-family: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.75;
+    color: #1e293b;
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    background: #ffffff;
+  }
+  body.htmj-vertical {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    max-width: none;
+    height: calc(100vh - 4rem);
+    overflow-x: auto;
+    line-height: 2;
+    letter-spacing: 0.04em;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    color: #0f172a;
+    font-weight: 700;
+    margin: 1.25em 0 0.6em;
+    line-height: 1.35;
+  }
+  h1 { font-size: 1.75rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.35rem; }
+  h2 { font-size: 1.35rem; }
+  p { margin: 0.75em 0; }
+  ul, ol { margin: 0.75em 0; padding-left: 1.5em; }
+  a { color: #4f46e5; text-decoration: underline; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th, td { border: 1px solid #cbd5e1; padding: 0.5rem 0.75rem; text-align: left; }
+  th { background: #f1f5f9; font-weight: 600; }
+  blockquote {
+    border-left: 4px solid #6366f1;
+    background: #f8fafc;
+    margin: 1em 0;
+    padding: 0.75rem 1rem;
+    color: #475569;
+  }
+  details {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin: 0.75em 0;
+    background: #f8fafc;
+  }
+  summary { font-weight: 600; cursor: pointer; color: #0f172a; }
+  .htmj-alert {
+    border-radius: 0.5rem;
+    padding: 0.85rem 1rem;
+    margin: 1em 0;
+    border-left: 4px solid #3b82f6;
+    background: #eff6ff;
+    color: #1e3a8a;
+  }
+  .htmj-alert-warning { border-left-color: #f59e0b; background: #fffbeb; color: #78350f; }
+  .htmj-alert-success { border-left-color: #10b981; background: #ecfdf5; color: #065f46; }
+  .htmj-alert-danger  { border-left-color: #ef4444; background: #fef2f2; color: #7f1d1d; }
+  form { display: flex; flex-direction: column; gap: 0.75rem; max-width: 440px; margin: 1em 0; }
+  input {
+    border: 1px solid #cbd5e1;
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.95rem;
+  }
+  button {
+    background: #4f46e5;
+    color: #fff;
+    border: none;
+    border-radius: 0.375rem;
+    padding: 0.55rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    align-self: flex-start;
+  }
+  button:hover { background: #4338ca; }
+  ruby rt { font-size: 0.65em; color: #475569; }
+</style>`;
+
+      // Generate indented HTML5 from AST
+      function generateHtml(ast, macros, errors, includeDefaultCss = true) {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mNum = now.getMonth() + 1;
+        const dNum = now.getDate();
+        const mm = String(mNum).padStart(2, '0');
+        const dd = String(dNum).padStart(2, '0');
+        const isoDate = `${yyyy}-${mm}-${dd}`;
+        const jpDate = `${yyyy}年${mNum}月${dNum}日`;
+        const weekdays = ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'];
+        const weekdayStr = weekdays[now.getDay()];
+        const isoDateUtc = new Date(Date.UTC(yyyy, now.getMonth(), dNum));
+        const dayNum = isoDateUtc.getUTCDay() || 7;
+        isoDateUtc.setUTCDate(isoDateUtc.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(isoDateUtc.getUTCFullYear(), 0, 1));
+        const isoWeekNo = Math.ceil((((isoDateUtc - yearStart) / 86400000) + 1) / 7);
+        const isoWeekStr = `${isoDateUtc.getUTCFullYear()}-W${String(isoWeekNo).padStart(2, '0')}`;
+
+        function buildAttrString(node) {
+          const out = [];
+          const a = node.attrs || {};
+
+          if (node.normTag === 'htmj') {
+            if (a['言語']) {
+              const lang = ATTR_VALUE_MAP.lang[a['言語']] || a['言語'];
+              out.push(`lang="${escapeHtml(lang)}"`);
+            }
+          } else if (node.normTag === '情報') {
+            if (a['文字']) out.push(`charset="${escapeHtml(a['文字'])}"`);
+            if (a['名']) out.push(`name="${escapeHtml(a['名'])}"`);
+            if (a['内容']) out.push(`content="${escapeHtml(a['内容'])}"`);
+          } else if (node.normTag === '記') {
+            if (node.flags && node.flags.includes('縦書き')) {
+              out.push(`class="htmj-vertical"`);
+            }
+          } else if (node.normTag === 'リンク') {
+            if (a['アドレス']) out.push(`href="${escapeHtml(a['アドレス'])}"`);
+            if (a['別窓'] === 'はい') out.push(`target="_blank" rel="noopener noreferrer"`);
+          } else if (node.normTag === '画像') {
+            if (a['ファイル']) out.push(`src="${escapeHtml(a['ファイル'])}"`);
+            out.push(`alt="${escapeHtml(a['テキスト'] || '')}"`);
+          } else if (node.normTag === '引用') {
+            if (a['出所']) out.push(`cite="${escapeHtml(a['出所'])}"`);
+          } else if (node.normTag === '領域') {
+            const classes = [];
+            if (a['種別']) {
+              const kind = ATTR_VALUE_MAP.alert[a['種別']] || 'info';
+              classes.push('htmj-alert', `htmj-alert-${kind}`);
+            }
+            if (a['クラス']) classes.push(a['クラス']);
+            if (classes.length) out.push(`class="${escapeHtml(classes.join(' '))}"`);
+            if (a['識別子'] || a['ID'] || a['id']) out.push(`id="${escapeHtml(a['識別子'] || a['ID'] || a['id'])}"`);
+          } else if (node.normTag === '入力') {
+            const typeVal = ATTR_VALUE_MAP.type[a['種類']] || a['種類'] || 'text';
+            out.push(`type="${escapeHtml(typeVal)}"`);
+            if (a['名']) out.push(`name="${escapeHtml(a['名'])}"`);
+            if (a['案内']) out.push(`placeholder="${escapeHtml(a['案内'])}"`);
+            if (a['値']) out.push(`value="${escapeHtml(a['値'])}"`);
+          } else if (node.normTag === 'ボタン') {
+            const typeVal = ATTR_VALUE_MAP.type[a['種類']] || a['種類'] || 'button';
+            out.push(`type="${escapeHtml(typeVal)}"`);
+          }
+
+          // Generic HTML attributes available on any element
+          if (a['クラス'] && !out.some((x) => x.startsWith('class='))) {
+            out.push(`class="${escapeHtml(a['クラス'])}"`);
+          }
+          if ((a['識別子'] || a['ID'] || a['id']) && !out.some((x) => x.startsWith('id='))) {
+            out.push(`id="${escapeHtml(a['識別子'] || a['ID'] || a['id'])}"`);
+          }
+          if (a['スタイル']) out.push(`style="${escapeHtml(a['スタイル'])}"`);
+          if (a['役割']) out.push(`role="${escapeHtml(a['役割'])}"`);
+          if (a['対象']) out.push(`for="${escapeHtml(a['対象'])}"`);
+          if (a['説明']) out.push(`aria-label="${escapeHtml(a['説明'])}"`);
+          if (a['タイトル']) out.push(`title="${escapeHtml(a['タイトル'])}"`);
+          if (a['値'] && !out.some((x) => x.startsWith('value='))) out.push(`value="${escapeHtml(a['値'])}"`);
+          if (a['データ']) out.push(`data-value="${escapeHtml(a['データ'])}"`);
+          if (a['送信元']) out.push(`srcdoc="${escapeHtml(a['送信元'])}"`);
+          if (a['サンドボックス']) out.push(`sandbox="${escapeHtml(a['サンドボックス'])}"`);
+          if (a['種別'] && node.normTag !== '領域' && node.normTag !== '入力' && node.normTag !== 'ボタン') {
+            out.push(`type="${escapeHtml(a['種別'])}"`);
+          }
+          if (node.flags) {
+            if (node.flags.includes('選択済')) out.push('selected');
+            if (node.flags.includes('チェック済')) out.push('checked');
+            if (node.flags.includes('隠し')) out.push('hidden');
+            if (node.flags.includes('読み取り専用')) out.push('readonly');
+          }
+
+          return out.length ? ' ' + out.join(' ') : '';
+        }
+
+        function renderNode(node, depth) {
+          const pad = '  '.repeat(depth);
+
+          if (node.type === 'Doctype') {
+            return `${pad}<!DOCTYPE html>`;
+          }
+          if (node.type === 'MacroDefine') {
+            return ''; // Macro definition is compile-time only
+          }
+          if (node.type === 'Text' || node.type === 'RawText') {
+            return `${pad}${expandInlineText(node.value, macros, errors, node.line)}`;
+          }
+          if (node.type === 'RawText') {
+            return node.value.replace(/^\r?\n|\r?\n\s*$/g, '');
+          }
+          if (node.type === 'Element') {
+            // Special: css / js / ts blocks & external files
+            if (node.normTag === 'css' && node.attrs && node.attrs['ファイル']) {
+              return `${pad}<link rel="stylesheet" href="${escapeHtml(node.attrs['ファイル'])}">`;
+            }
+            if ((node.normTag === 'js' || node.normTag === 'ts') && node.attrs && node.attrs['ファイル']) {
+              return `${pad}<script src="${escapeHtml(node.attrs['ファイル'])}"><\/script>`;
+            }
+            if (node.normTag === 'css' || node.normTag === 'js' || node.normTag === 'ts') {
+              let rawCode = node.children.map((c) => c.value || '').join('').replace(/^\r?\n|\r?\n\s*$/g, '');
+              if (node.normTag === 'ts' && typeof window !== 'undefined' && window.ts) {
+                try {
+                  rawCode = window.ts.transpileModule(rawCode, {
+                    compilerOptions: { target: window.ts.ScriptTarget.ES2020 }
+                  }).outputText.trimEnd();
+                } catch (e) {
+                  errors.push({ line: node.line, message: `TypeScript変換エラー: ${e.message}` });
+                }
+              }
+              const tag = node.normTag === 'css' ? 'style' : 'script';
+              if (!rawCode.trim()) return `${pad}<${tag}></${tag}>`;
+              const indented = rawCode.split('\n').map((l) => `${pad}  ${l}`).join('\n');
+              return `${pad}<${tag}>\n${indented}\n${pad}</${tag}>`;
+            }
+
+            // Special: Date/Time macros (今日, 今年, 今月, 日付, 週, 曜日)
+            if (node.normTag === '今日') {
+              return `${pad}<time datetime="${isoDate}">${jpDate}</time>`;
+            }
+            if (node.normTag === '今年') {
+              return `${pad}<time datetime="${yyyy}">${yyyy}年</time>`;
+            }
+            if (node.normTag === '今月') {
+              return `${pad}<time datetime="${yyyy}-${mm}">${yyyy}年${mNum}月</time>`;
+            }
+            if (node.normTag === '日付') {
+              return `${pad}<time datetime="${isoDate}">${mNum}月${dNum}日</time>`;
+            }
+            if (node.normTag === '週') {
+              return `${pad}<time datetime="${isoWeekStr}">第${isoWeekNo}週</time>`;
+            }
+            if (node.normTag === '曜日') {
+              return `${pad}<span>${weekdayStr}</span>`;
+            }
+            // Special: ルビー tag -> <ruby>text<rt>振</rt></ruby>
+            if (node.normTag === 'ルビー') {
+              const rt = escapeHtml(node.attrs['振'] || '');
+              const inner = node.children.map((c) =>
+                c.type === 'Text' ? expandInlineText(c.value, macros, errors, c.line) : renderNode(c, 0).trim()
+              ).join('');
+              return `${pad}<ruby>${inner}<rt>${rt}</rt></ruby>`;
+            }
+            // Special: 折りたたみ tag -> <details><summary>題</summary>...</details>
+            if (node.normTag === '折りたたみ') {
+              const title = escapeHtml(node.attrs['見出し'] || '詳細');
+              const innerLines = node.children.map((c) => renderNode(c, depth + 1)).filter(Boolean);
+              const lines = [
+                `${pad}<details>`,
+                `${pad}  <summary>${title}</summary>`,
+                ...innerLines,
+                `${pad}</details>`
+              ];
+              return lines.join('\n');
+            }
+
+            const attrStr = buildAttrString(node);
+            if (node.selfClosing || VOID_HTML_TAGS.has(node.htmlTag)) {
+              return `${pad}<${node.htmlTag}${attrStr}>`;
+            }
+
+            // Inject default CSS inside <head> if enabled
+            const extraHeadLines = [];
+            if (node.htmlTag === 'head' && includeDefaultCss) {
+              extraHeadLines.push(DEFAULT_STYLE.split('\n').map((l) => `${pad}  ${l}`).join('\n'));
+            }
+
+            // Inline formatting if only 1 short text child (or ruby inside p)
+            const hasOnlyInline = node.children.every(
+              (c) => c.type === 'Text' || (c.type === 'Element' && (c.normTag === 'ルビー' || ['今日', '今年', '今月', '日付', '週', '曜日'].includes(c.normTag) || c.normTag === 'リンク'))
+            );
+
+            if (node.children.length === 0 && extraHeadLines.length === 0) {
+              return `${pad}<${node.htmlTag}${attrStr}></${node.htmlTag}>`;
+            }
+
+            if (hasOnlyInline && extraHeadLines.length === 0 && node.htmlTag !== 'body' && node.htmlTag !== 'head') {
+              const inlineContent = node.children
+                .map((c) => renderNode(c, 0).trim())
+                .filter(Boolean)
+                .join(' ');
+              return `${pad}<${node.htmlTag}${attrStr}>${inlineContent}</${node.htmlTag}>`;
+            }
+
+            const childLines = node.children.map((c) => renderNode(c, depth + 1)).filter(Boolean);
+            return [
+              `${pad}<${node.htmlTag}${attrStr}>`,
+              ...childLines,
+              ...extraHeadLines,
+              `${pad}</${node.htmlTag}>`
+            ].join('\n');
+          }
+          return '';
+        }
+
+        const hasNonMacroContent = ast.children.some((c) => c.type !== 'MacroDefine');
+        if (!hasNonMacroContent) {
+          return '';
+        }
+
+        const hasDoctype = ast.children.some((c) => c.type === 'Doctype');
+        const hasHtml = ast.children.some((c) => c.type === 'Element' && c.htmlTag === 'html');
+
+        if (hasHtml) {
+          const rendered = ast.children.map((c) => renderNode(c, 0)).filter(Boolean);
+          if (!hasDoctype) rendered.unshift('<!DOCTYPE html>');
+          return rendered.join('\n');
+        }
+
+        // Auto-wrap omitted outer structure (<!DOCTYPE html>, <html>, <head>, <body>)
+        const headNodes = ast.children.filter((c) => c.type === 'Element' && c.htmlTag === 'head');
+        const bodyNodes = ast.children.filter(
+          (c) => c.type !== 'Doctype' && c.type !== 'MacroDefine' && !(c.type === 'Element' && c.htmlTag === 'head')
+        );
+        const hasBody = bodyNodes.some((c) => c.type === 'Element' && c.htmlTag === 'body');
+
+        const out = ['<!DOCTYPE html>', '<html lang="ja">'];
+        if (headNodes.length > 0) {
+          headNodes.forEach((hn) => out.push(renderNode(hn, 1)));
+        } else {
+          out.push('  <head>');
+          out.push('    <meta charset="UTF-8">');
+          if (includeDefaultCss) {
+            out.push(DEFAULT_STYLE.split('\n').map((l) => `    ${l}`).join('\n'));
+          }
+          out.push('  </head>');
+        }
+
+        if (hasBody) {
+          bodyNodes.forEach((bn) => {
+            const r = renderNode(bn, 1);
+            if (r) out.push(r);
+          });
+        } else {
+          out.push('  <body>');
+          bodyNodes.forEach((bn) => {
+            const r = renderNode(bn, 2);
+            if (r) out.push(r);
+          });
+          out.push('  </body>');
+        }
+        out.push('</html>');
+        return out.join('\n');
+      }
+
+      function compile(source, includeDefaultCss = true) {
+        const errors = [];
+        const tokens = tokenize(source, errors);
+        const { ast, macros } = parse(tokens, errors);
+        const html = generateHtml(ast, macros, errors, includeDefaultCss);
+        return { ast, macros, html, errors };
+      }
+
+      return { compile };
+    })();
+
+    // =========================================================================
+    // 2. Sample Presets (from specification + practical examples)
+    // =========================================================================
+    const SAMPLES = {
+      spec: `（文書タイプ、「htmj」！）
+（ｈｔｍｊ、言語 は「日本語」、）
+  （設定、）
+    （情報、文字 は「UTF-8」。）
+    （タイトル、）
+      ｜HTMJ《エッチティーエムジェイ》 デモ
+    （終、タイトル。）
+  （終、設定。）
+  （記、）
+    （定義、名 は「著者」、値 は「山田太郎」。）
+    （ｈ一、）HTMJ ポータル（終、ｈ一。）
+    （領域、種別 は「お知らせ」、）
+      （段、）このページは：今日：に更新されました。作成者: ：著者：（終、段。）
+    （終、領域。）
+    （折りたたみ、見出し は「Q. ルビー記法について」、）
+      （段、）
+        （ルビー、振 は「こうぶんはあく」、）構文解析（終、ルビー。）を実行します。
+        また、｜青空文庫風《あおぞらぶんこふう》の記法もそのまま使えます。
+      （終、段。）
+    （終、折りたたみ。）
+  （終、記。）
+（終、ｈｔｍｊ。）`,
+
+      vertical: `（文書タイプ、「htmj」！）
+（ｈｔｍｊ、言語 は「日本語」、）
+  （設定、）
+    （情報、文字 は「UTF-8」。）
+    （タイトル、）縦書き和文ドキュメント（終、タイトル。）
+  （終、設定。）
+  （記、縦書き、）
+    （定義、名 は「作品名」、値 は「銀河鉄道の夜」。）
+    （ｈ一、）：作品名： 抜粋（終、ｈ一。）
+    （段、）
+      ｜ジョバンニ《じょばんに》は、せわしくいろいろのことを｜考《かんが》えながら、
+      ｜星《ほし》めぐりの｜歌《うた》を｜口《くち》ずさみました。
+    （終、段。）
+    （引用、出所 は「青空文庫」、）
+      （段、）ほんとうにどんなに｜遠《とお》くても、そこへ行かれるのだ。（終、段。）
+    （終、引用。）
+    （段、）閲覧日: ：今日：（終、段。）
+  （終、記。）
+（終、ｈｔｍｊ。）`,
+
+      business: `（文書タイプ、「htmj」！）
+（ｈｔｍｊ、言語 は「日本語」、）
+  （設定、）
+    （情報、文字 は「UTF-8」。）
+    （タイトル、）社内申請 & タグ一覧（終、タイトル。）
+  （終、設定。）
+  （記、）
+    （ｈ一、）備品購入申請フォーム（終、ｈ一。）
+    （領域、種別 は「警告」、）
+      （段、）提出期限は：今日：までです。必要事項を入力してください。（終、段。）
+    （終、領域。）
+    （ｈ二、）申請者情報（終、ｈ二。）
+    （フォーム、）
+      （入力、種類 は「文字」、名 は「applicant」、案内 は「氏名を入力（例：佐藤花子）」。）
+      （入力、種類 は「メール」、名 は「email」、案内 は「メールアドレス」。）
+      （ボタン、種類 は「送信」、）申請を送信する（終、ボタン。）
+    （終、フォーム。）
+    （ｈ二、）主な備品価格表（終、ｈ二。）
+    （表、）
+      （行、）
+        （見出し格、）品目（終、見出し格。）
+        （見出し格、）単価（終、見出し格。）
+      （終、行。）
+      （行、）
+        （格、）エルゴノミクスキーボード（終、格。）
+        （格、）18,500円（終、格。）
+      （終、行。）
+      （行、）
+        （格、）4Kモニター（27インチ）（終、格。）
+        （格、）54,000円（終、格。）
+      （終、行。）
+    （終、表。）
+  （終、記。）
+（終、ｈｔｍｊ。）`,
+
+      error_demo: `（文書タイプ、「htmj」！）
+（ｈｔｍｊ、言語 は「日本語」、）
+  （設定、）
+    （情報、文字 は「UTF-8」。）
+    （タイトル、）エラー検知テスト（終、タイトル。）
+  （終、設定。）
+  （記、）
+    （ｈ一、）構文エラーの自動ジャンプ確認（終、ｈ一。）
+    （段、）この段落は閉じタグを間違えています。（終、ｈ二。）
+    （段、）未定義のマクロ参照: 《存在しない変数》（終、段。）
+    （未知タグ、）これはエラーになります（終、未知タグ。）
+  （終、記。）
+（終、ｈｔｍｊ。）`
+    };
+
+    // =========================================================================
+    // 3. UI Controller (Editor, Debounce, Multi-View, Split Resizer, AST Tree)
+    // =========================================================================
+    const htmjInput = document.getElementById('htmjInput');
+    const lineNumbers = document.getElementById('lineNumbers');
+    const lineHighlightLayer = document.getElementById('lineHighlightLayer');
+    const previewFrame = document.getElementById('previewFrame');
+    const htmlCodeOutput = document.getElementById('htmlCodeOutput');
+    const astTreeContainer = document.getElementById('astTreeContainer');
+    const errorPanel = document.getElementById('errorPanel');
+    const errorList = document.getElementById('errorList');
+    const errorCount = document.getElementById('errorCount');
+    const compileStatus = document.getElementById('compileStatus');
+    const cursorPos = document.getElementById('cursorPos');
+    const charStats = document.getElementById('charStats');
+    const toggleDefaultCss = document.getElementById('toggleDefaultCss');
+    const toggleDefaultCssWrap = document.getElementById('toggleDefaultCssWrap');
+    const btnCopyHtml = document.getElementById('btnCopyHtml');
+    const btnDownloadHtml = document.getElementById('btnDownloadHtml');
+    const sampleSelect = document.getElementById('sampleSelect');
+    const fileImport = document.getElementById('fileImport');
+    const refDrawer = document.getElementById('refDrawer');
+    const btnToggleRef = document.getElementById('btnToggleRef');
+    const btnCloseRef = document.getElementById('btnCloseRef');
+    const toast = document.getElementById('toast');
+
+    let currentView = 'web';
+    let lastCompiledHtml = '';
+    let lastAst = null;
+    let debounceTimer = null;
+    let toastTimer = null;
+    const STORAGE_KEY = 'htmj_studio_source_v1';
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.remove('opacity-0', 'translate-y-2');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+      }, 2200);
+    }
+
+    function updateLineNumbersAndStats() {
+      const val = htmjInput.value;
+      const lines = val.split('\n');
+      const count = lines.length;
+      let html = '';
+      for (let i = 1; i <= count; i++) {
+        html += `<div>${i}</div>`;
+      }
+      lineNumbers.innerHTML = html;
+      charStats.textContent = `${val.length} 文字 / ${count} 行`;
+    }
+
+    function updateCursorPos() {
+      const pos = htmjInput.selectionStart || 0;
+      const before = htmjInput.value.slice(0, pos);
+      const lines = before.split('\n');
+      cursorPos.textContent = `行 ${lines.length}, 列 ${lines[lines.length - 1].length + 1}`;
+    }
+
+    function jumpToLine(lineNum) {
+      const lines = htmjInput.value.split('\n');
+      const targetLine = Math.max(1, Math.min(lineNum, lines.length));
+      let offset = 0;
+      for (let i = 0; i < targetLine - 1; i++) {
+        offset += lines[i].length + 1;
+      }
+      htmjInput.focus();
+      htmjInput.setSelectionRange(offset, offset + (lines[targetLine - 1] || '').length);
+      updateCursorPos();
+
+      // Scroll textarea to target line (line-height = 24px)
+      const lineHeight = 24;
+      const targetScrollTop = Math.max(0, (targetLine - 3) * lineHeight);
+      htmjInput.scrollTop = targetScrollTop;
+      lineNumbers.scrollTop = targetScrollTop;
+
+      // Render highlight flash
+      lineHighlightLayer.innerHTML = '';
+      const marker = document.createElement('div');
+      marker.className = 'line-highlight-flash w-full';
+      marker.style.position = 'absolute';
+      marker.style.left = '0';
+      marker.style.right = '0';
+      marker.style.height = `${lineHeight}px`;
+      marker.style.top = `${12 + (targetLine - 1) * lineHeight - htmjInput.scrollTop}px`;
+      lineHighlightLayer.appendChild(marker);
+      setTimeout(() => { lineHighlightLayer.innerHTML = ''; }, 1600);
+    }
+
+    function renderAstTree(ast) {
+      astTreeContainer.innerHTML = '';
+      function buildNodeEl(node) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'py-0.5';
+
+        if (node.type === 'Text') {
+          const previewText = node.value.replace(/\s+/g, ' ').trim();
+          wrapper.innerHTML = `<span class="text-slate-400">Text</span> <span class="text-emerald-700">"${previewText.replace(/</g, '&lt;')}"</span> <span class="text-[10px] text-slate-400">L${node.line}</span>`;
+          return wrapper;
+        }
+        if (node.type === 'Doctype') {
+          wrapper.innerHTML = `<span class="px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-semibold">Doctype</span> <span class="text-slate-600">&lt;!DOCTYPE html&gt;</span> <span class="text-[10px] text-slate-400">L${node.line}</span>`;
+          return wrapper;
+        }
+        if (node.type === 'MacroDefine') {
+          wrapper.innerHTML = `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">Macro</span> <span class="text-slate-700">${node.name} = "${node.value}"</span> <span class="text-[10px] text-slate-400">L${node.line}</span>`;
+          return wrapper;
+        }
+
+        const hasChildren = node.children && node.children.length > 0;
+        const header = document.createElement('div');
+        header.className = 'flex items-center gap-1.5 flex-wrap';
+
+        if (hasChildren) {
+          const toggleBtn = document.createElement('button');
+          toggleBtn.type = 'button';
+          toggleBtn.className = 'ast-toggle w-4 h-4 inline-flex items-center justify-center rounded bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] cursor-pointer';
+          toggleBtn.textContent = '−';
+          header.appendChild(toggleBtn);
+        } else {
+          const dot = document.createElement('span');
+          dot.className = 'w-4 inline-block text-center text-slate-400';
+          dot.textContent = '•';
+          header.appendChild(dot);
+        }
+
+        const badge = document.createElement('span');
+        badge.className = 'px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 font-semibold';
+        badge.textContent = node.type === 'Document' ? 'Document' : `${node.htmjTag} → <${node.htmlTag}>`;
+        header.appendChild(badge);
+
+        if (node.attrs && Object.keys(node.attrs).length > 0) {
+          const attrSpan = document.createElement('span');
+          attrSpan.className = 'text-sky-700';
+          attrSpan.textContent = Object.entries(node.attrs).map(([k, v]) => `${k}="${v}"`).join(' ');
+          header.appendChild(attrSpan);
+        }
+
+        if (node.flags && node.flags.length > 0) {
+          const flagSpan = document.createElement('span');
+          flagSpan.className = 'px-1 rounded bg-slate-200 text-slate-700 text-[10px]';
+          flagSpan.textContent = node.flags.join(', ');
+          header.appendChild(flagSpan);
+        }
+
+        if (node.line) {
+          const lineSpan = document.createElement('span');
+          lineSpan.className = 'text-[10px] text-slate-400';
+          lineSpan.textContent = `L${node.line}`;
+          header.appendChild(lineSpan);
+        }
+
+        wrapper.appendChild(header);
+
+        if (hasChildren) {
+          const childrenBox = document.createElement('div');
+          childrenBox.className = 'ast-children mt-0.5 space-y-0.5';
+          for (const child of node.children) {
+            childrenBox.appendChild(buildNodeEl(child));
+          }
+          wrapper.appendChild(childrenBox);
+
+          const toggleBtn = header.querySelector('.ast-toggle');
+          toggleBtn.addEventListener('click', () => {
+            const hidden = childrenBox.classList.toggle('hidden');
+            toggleBtn.textContent = hidden ? '+' : '−';
+          });
+        }
+
+        return wrapper;
+      }
+
+      astTreeContainer.appendChild(buildNodeEl(ast));
+    }
+
+    function runCompile() {
+      const source = htmjInput.value;
+      try {
+        localStorage.setItem(STORAGE_KEY, source);
+      } catch (e) { /* ignore storage restrictions */ }
+
+      const { ast, html, errors } = HTMJCompiler.compile(source, toggleDefaultCss.checked);
+      lastCompiledHtml = html;
+      lastAst = ast;
+
+      // Update Web View iframe
+      previewFrame.srcdoc = html;
+      // Update HTML5 Source View
+      htmlCodeOutput.textContent = html;
+      // Update AST View
+      renderAstTree(ast);
+
+      // Update Error Panel & Status Badge
+      if (errors.length > 0) {
+        compileStatus.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-800';
+        compileStatus.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>エラー ${errors.length}件`;
+        errorCount.textContent = String(errors.length);
+        errorList.innerHTML = '';
+        for (const err of errors) {
+          const li = document.createElement('li');
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'w-full text-left px-3 py-1.5 text-xs text-red-700 hover:bg-red-100/70 flex items-center gap-2 transition-colors cursor-pointer';
+          btn.innerHTML = `<span class="px-1.5 py-0.5 rounded bg-red-200/80 text-red-900 font-mono-jp text-[11px] shrink-0">${err.line}行目</span><span class="truncate">${err.message}</span>`;
+          btn.addEventListener('click', () => jumpToLine(err.line));
+          li.appendChild(btn);
+          errorList.appendChild(li);
+        }
+        errorPanel.classList.remove('hidden');
+      } else {
+        compileStatus.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 text-emerald-800';
+        compileStatus.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>正常';
+        errorPanel.classList.add('hidden');
+      }
+    }
+
+    function scheduleCompile() {
+      compileStatus.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 text-amber-800';
+      compileStatus.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>変換中...';
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(runCompile, 300);
+    }
+
+    // Event: Editor input & scroll sync
+    htmjInput.addEventListener('input', () => {
+      updateLineNumbersAndStats();
+      updateCursorPos();
+      scheduleCompile();
+    });
+    htmjInput.addEventListener('scroll', () => {
+      lineNumbers.scrollTop = htmjInput.scrollTop;
+    });
+    htmjInput.addEventListener('click', updateCursorPos);
+    htmjInput.addEventListener('keyup', updateCursorPos);
+
+    // Tab key indentation in textarea
+    htmjInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = htmjInput.selectionStart;
+        const end = htmjInput.selectionEnd;
+        const val = htmjInput.value;
+        htmjInput.value = val.slice(0, start) + '  ' + val.slice(end);
+        htmjInput.selectionStart = htmjInput.selectionEnd = start + 2;
+        updateLineNumbersAndStats();
+        updateCursorPos();
+        scheduleCompile();
+      }
+    });
+
+    const toggleAutoPair = document.getElementById('toggleAutoPair');
+    const btnSmartClose = document.getElementById('btnSmartClose');
+    const suggestBar = document.getElementById('suggestBar');
+
+    function insertAtCursor(text, cursorOffset) {
+      const start = htmjInput.selectionStart || 0;
+      const end = htmjInput.selectionEnd || 0;
+      const val = htmjInput.value;
+      htmjInput.value = val.slice(0, start) + text + val.slice(end);
+      const pos = start + (cursorOffset !== undefined ? cursorOffset : text.length);
+      htmjInput.focus();
+      htmjInput.setSelectionRange(pos, pos);
+      updateLineNumbersAndStats();
+      updateCursorPos();
+      updateSmartCloseAndSuggest();
+      runCompile();
+    }
+
+    // One-tap symbol & snippet assist buttons
+    document.querySelectorAll('.assist-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const text = btn.getAttribute('data-insert') || '';
+        const offsetAttr = btn.getAttribute('data-cursor');
+        const offset = offsetAttr !== null ? Number(offsetAttr) : text.length;
+        insertAtCursor(text, offset);
+      });
+    });
+
+    // Clickable reference table rows -> insert into editor
+    document.querySelectorAll('#refDrawer tbody tr').forEach((tr) => {
+      tr.classList.add('hover:bg-indigo-50', 'cursor-pointer', 'transition-colors');
+      tr.title = 'クリックしてエディタに挿入';
+      tr.addEventListener('click', () => {
+        const firstTd = tr.querySelector('td');
+        if (!firstTd) return;
+        const text = firstTd.textContent.split('/')[0].trim();
+        insertAtCursor(text, text.length);
+        if (window.innerWidth < 1024) {
+          refDrawer.classList.add('hidden');
+        }
+        showToast(`${text} を挿入しました`);
+      });
+    });
+
+    // Smart close tag detection & autocomplete candidates
+    const TAG_SUGGESTIONS = [
+      { keys: ['文書', 'doctype', 'ぶんしょ'], label: '（文書タイプ、「htmj」！）', snippet: '（文書タイプ、「htmj」！）', offset: 17 },
+      { keys: ['htmj', 'ｈｔｍｊ'], label: '（ｈｔｍｊ、言語 は「日本語」、）', snippet: '（ｈｔｍｊ、言語 は「日本語」、）\n  \n（終、ｈｔｍｊ。）', offset: 22 },
+      { keys: ['設定', 'head', 'せってい'], label: '（設定、）', snippet: '（設定、）\n  \n（終、設定。）', offset: 8 },
+      { keys: ['情報', 'meta', 'じょうほう'], label: '（情報、文字 は「UTF-8」。）', snippet: '（情報、文字 は「UTF-8」。）', offset: 17 },
+      { keys: ['タイトル', 'title', 'たいとる'], label: '（タイトル、）', snippet: '（タイトル、）（終、タイトル。）', offset: 6 },
+      { keys: ['記', 'body', 'き', '縦'], label: '（記、）', snippet: '（記、）\n  \n（終、記。）', offset: 7 },
+      { keys: ['h1', 'ｈ一', '見出し'], label: '（ｈ一、）', snippet: '（ｈ一、）（終、ｈ一。）', offset: 4 },
+      { keys: ['h2', 'ｈ二', '見出し'], label: '（ｈ二、）', snippet: '（ｈ二、）（終、ｈ二。）', offset: 4 },
+      { keys: ['段', 'p', 'だん'], label: '（段、）', snippet: '（段、）（終、段。）', offset: 3 },
+      { keys: ['箇条', 'ul', 'かじょう'], label: '（箇条、）', snippet: '（箇条、）\n  （項目、）（終、項目。）\n（終、箇条。）', offset: 12 },
+      { keys: ['項目', 'li', 'こうもく'], label: '（項目、）', snippet: '（項目、）（終、項目。）', offset: 4 },
+      { keys: ['リンク', 'a', 'りんく'], label: '（リンク、アドレス は「」、）', snippet: '（リンク、アドレス は「」、）（終、リンク。）', offset: 12 },
+      { keys: ['画像', 'img', 'がぞう'], label: '（画像、ファイル は「」、）', snippet: '（画像、ファイル は「」、）', offset: 11 },
+      { keys: ['領域', 'div', 'りょういき'], label: '（領域、）', snippet: '（領域、）\n  \n（終、領域。）', offset: 8 },
+      { keys: ['ルビー', 'ruby', 'るび'], label: '（ルビー、振 は「」、）', snippet: '（ルビー、振 は「」、）（終、ルビー。）', offset: 9 },
+      { keys: ['折りたたみ', 'details', 'おりたたみ'], label: '（折りたたみ、見出し は「」、）', snippet: '（折りたたみ、見出し は「」、）\n  \n（終、折りたたみ。）', offset: 13 },
+      { keys: ['引用', 'blockquote', 'いんよう'], label: '（引用、出所 は「」、）', snippet: '（引用、出所 は「」、）（終、引用。）', offset: 10 },
+      { keys: ['表', 'table', 'ひょう'], label: '（表、）', snippet: '（表、）\n  （行、）（終、行。）\n（終、表。）', offset: 10 },
+      { keys: ['定義', 'macro', 'ていぎ'], label: '（定義、名 は「」、値 は「」。）', snippet: '（定義、名 は「」、値 は「」。）', offset: 7 },
+      { keys: ['css', 'ｃｓｓ', 'style'], label: '（ｃｓｓ、）', snippet: '（ｃｓｓ、）\n  \n（終、ｃｓｓ。）', offset: 9 },
+      { keys: ['js', 'ｊｓ', 'script'], label: '（ｊｓ、）', snippet: '（ｊｓ、）\n  \n（終、ｊｓ。）', offset: 8 },
+      { keys: ['ts', 'ｔｓ'], label: '（ｔｓ、）', snippet: '（ｔｓ、）\n  \n（終、ｔｓ。）', offset: 8 }
+    ];
+
+    let currentUnclosedTag = null;
+    function updateSmartCloseAndSuggest() {
+      const pos = htmjInput.selectionStart || 0;
+      const before = htmjInput.value.slice(0, pos);
+
+      // 1) Find innermost unclosed tag before cursor
+      const stack = [];
+      const tagRe = /[（(]([^（）()\n]+?)[）)]/g;
+      let m;
+      while ((m = tagRe.exec(before)) !== null) {
+        const inner = m[1].trim();
+        const last = inner[inner.length - 1];
+        if (last === '、' || last === ',') {
+          const head = inner.slice(0, -1).split(/[、,]/)[0].trim();
+          if (head && head !== '終') stack.push(head);
+        } else if (last === '。' || last === '.') {
+          const parts = inner.slice(0, -1).split(/[、,]/);
+          if (parts[0].trim() === '終' && parts[1]) {
+            const target = parts[1].trim();
+            for (let i = stack.length - 1; i >= 0; i--) {
+              if (stack[i] === target) {
+                stack.splice(i, 1);
+                break;
+              }
+            }
+          }
+        }
+      }
+      currentUnclosedTag = stack.length > 0 ? stack[stack.length - 1] : null;
+      if (currentUnclosedTag) {
+        btnSmartClose.textContent = `閉じる: （終、${currentUnclosedTag}。）`;
+        btnSmartClose.classList.remove('hidden');
+      } else {
+        btnSmartClose.classList.add('hidden');
+      }
+
+      // 2) Autocomplete suggestions when typing inside an open parenthesis
+      const typingMatch = before.match(/[（(]([^（）()\n、,。.]*)$/);
+      if (typingMatch) {
+        const q = typingMatch[1].trim().toLowerCase();
+        const matches = q
+          ? TAG_SUGGESTIONS.filter((t) => t.keys.some((k) => k.toLowerCase().includes(q)) || t.label.toLowerCase().includes(q))
+          : TAG_SUGGESTIONS.slice(0, 6);
+        if (matches.length > 0) {
+          suggestBar.innerHTML = '<span class="text-[11px] font-semibold text-indigo-700 shrink-0">候補:</span>';
+          matches.slice(0, 6).forEach((item) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'px-2 py-0.5 text-xs font-mono-jp bg-white hover:bg-indigo-100 text-indigo-900 border border-indigo-300 rounded shrink-0 cursor-pointer';
+            b.textContent = item.label;
+            b.addEventListener('click', () => {
+              const curPos = htmjInput.selectionStart || 0;
+              const startIdx = curPos - typingMatch[0].length;
+              const val = htmjInput.value;
+              htmjInput.value = val.slice(0, startIdx) + item.snippet + val.slice(curPos);
+              const nextPos = startIdx + item.offset;
+              htmjInput.focus();
+              htmjInput.setSelectionRange(nextPos, nextPos);
+              updateLineNumbersAndStats();
+              updateCursorPos();
+              updateSmartCloseAndSuggest();
+              runCompile();
+            });
+            suggestBar.appendChild(b);
+          });
+          suggestBar.classList.remove('hidden');
+          return;
+        }
+      }
+      suggestBar.classList.add('hidden');
+    }
+
+    btnSmartClose.addEventListener('click', () => {
+      if (!currentUnclosedTag) return;
+      const closeText = `（終、${currentUnclosedTag}。）`;
+      insertAtCursor(closeText, closeText.length);
+    });
+
+    // IME-safe auto-closing pairs for 「」, 《》, （） (guarded against duplicate closing)
+    let isComposing = false;
+    let justComposed = false;
+    htmjInput.addEventListener('compositionstart', () => { isComposing = true; });
+    htmjInput.addEventListener('compositionend', (e) => {
+      isComposing = false;
+      justComposed = true;
+      setTimeout(() => { justComposed = false; }, 50);
+      if (!toggleAutoPair.checked) return;
+      const data = e.data || '';
+      if (data.length === 1) tryAutoPair(data);
+    });
+
+    function tryAutoPair(insertedChar) {
+      const pairs = { '「': '」', '《': '》', '（': '）', '(': ')' };
+      const closeCh = pairs[insertedChar];
+      if (!closeCh) return;
+      const pos = htmjInput.selectionStart || 0;
+      const val = htmjInput.value;
+      if (val[pos] === closeCh) return;
+      // Only auto-pair if current line has more opening brackets than closing brackets
+      const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+      const lineEndIdx = val.indexOf('\n', pos);
+      const lineText = val.slice(lineStart, lineEndIdx === -1 ? val.length : lineEndIdx);
+      const openCount = lineText.split(insertedChar).length - 1;
+      const closeCount = lineText.split(closeCh).length - 1;
+      if (openCount <= closeCount) return;
+      htmjInput.value = val.slice(0, pos) + closeCh + val.slice(pos);
+      htmjInput.setSelectionRange(pos, pos);
+      updateLineNumbersAndStats();
+    }
+
+    htmjInput.addEventListener('input', (e) => {
+      if (!isComposing && !justComposed && toggleAutoPair.checked && e.inputType === 'insertText' && e.data && e.data.length === 1) {
+        tryAutoPair(e.data);
+      }
+      updateSmartCloseAndSuggest();
+    });
+    htmjInput.addEventListener('click', updateSmartCloseAndSuggest);
+    htmjInput.addEventListener('keyup', updateSmartCloseAndSuggest);
+
+    // Multi-View tab switching
+    document.querySelectorAll('.view-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const view = tab.getAttribute('data-view');
+        currentView = view;
+        document.querySelectorAll('.view-tab').forEach((t) => {
+          const active = t.getAttribute('data-view') === view;
+          t.setAttribute('aria-selected', String(active));
+          t.className = active
+            ? 'view-tab px-2.5 py-1 rounded-md text-xs font-medium bg-white text-indigo-700 shadow-sm border border-slate-200 transition-all cursor-pointer'
+            : 'view-tab px-2.5 py-1 rounded-md text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 transition-all cursor-pointer';
+        });
+
+        document.getElementById('viewWeb').classList.toggle('hidden', view !== 'web');
+        document.getElementById('viewHtml').classList.toggle('hidden', view !== 'html');
+        document.getElementById('viewAst').classList.toggle('hidden', view !== 'ast');
+        btnCopyHtml.classList.toggle('hidden', view !== 'html');
+        toggleDefaultCssWrap.classList.toggle('hidden', view === 'ast');
+      });
+    });
+
+    // Toggle Default CSS
+    toggleDefaultCss.addEventListener('change', runCompile);
+
+    // AST Expand / Collapse all
+    document.getElementById('btnExpandAllAst').addEventListener('click', () => {
+      astTreeContainer.querySelectorAll('.ast-children').forEach((el) => el.classList.remove('hidden'));
+      astTreeContainer.querySelectorAll('.ast-toggle').forEach((b) => { b.textContent = '−'; });
+    });
+    document.getElementById('btnCollapseAllAst').addEventListener('click', () => {
+      astTreeContainer.querySelectorAll('.ast-children').forEach((el) => el.classList.add('hidden'));
+      astTreeContainer.querySelectorAll('.ast-toggle').forEach((b) => { b.textContent = '+'; });
+    });
+
+    // Copy HTML5 source
+    btnCopyHtml.addEventListener('click', async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(lastCompiledHtml);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = lastCompiledHtml;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        showToast('HTML5ソースをクリップボードにコピーしました');
+      } catch {
+        showToast('コピーに失敗しました');
+      }
+    });
+
+    // Download HTMJ file
+    const btnDownloadHtmj = document.getElementById('btnDownloadHtmj');
+    const htmlImport = document.getElementById('htmlImport');
+
+    function downloadTextFile(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast(`${filename} をダウンロードしました`);
+    }
+
+    btnDownloadHtmj.addEventListener('click', () => {
+      downloadTextFile(htmjInput.value, 'document.htmj', 'text/plain;charset=utf-8');
+    });
+
+    // Download HTML5 file
+    btnDownloadHtml.addEventListener('click', () => {
+      downloadTextFile(lastCompiledHtml, 'htmj_output.html', 'text/html;charset=utf-8');
+    });
+
+    // HTML -> HTMJ Reverse Converter
+    function htmlToHtmj(htmlStr) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlStr, 'text/html');
+      const REVERSE_TAG = {
+        html: 'ｈｔｍｊ', head: '設定', meta: '情報', title: 'タイトル', body: '記',
+        h1: 'ｈ一', h2: 'ｈ二', h3: 'ｈ三', h4: 'ｈ四', h5: 'ｈ五', h6: 'ｈ六',
+        p: '段', ul: '箇条', ol: '順箇条', li: '項目', a: 'リンク', img: '画像',
+        table: '表', tr: '行', th: '見出し格', td: '格', ruby: 'ルビー',
+        details: '折りたたみ', blockquote: '引用', div: '領域', form: 'フォーム',
+        input: '入力', button: 'ボタン', style: 'ｃｓｓ', script: 'ｊｓ',
+        header: '上部', main: '主文', section: '節', aside: '補足', span: '句',
+        label: 'ラベル', select: '選択', option: '選択肢', iframe: '埋込枠',
+        textarea: '複数行入力', pre: '整形', code: 'コード', br: '改行', hr: '区切り'
+      };
+      const VOID_TAGS = new Set(['meta', 'img', 'input', 'br', 'hr']);
+      const LANG_REV = { ja: '日本語', en: '英語', zh: '中国語', ko: '韓国語' };
+      const TYPE_REV = {
+        text: '文字', password: 'パスワード', email: 'メール', number: '数値',
+        submit: '送信', reset: 'リセット', button: 'ボタン', checkbox: 'チェック', radio: 'ラジオ', date: '日付'
+      };
+
+      function fmtAttr(k, v) {
+        return `${k} は「${v}」`;
+      }
+
+      function convertEl(el, depth) {
+        const pad = '  '.repeat(depth);
+        const tag = el.tagName.toLowerCase();
+        if (tag === 'link' && (el.getAttribute('rel') || '').toLowerCase() === 'stylesheet') {
+          const href = el.getAttribute('href') || '';
+          return `${pad}（ｃｓｓ、ファイル は「${href}」。）`;
+        }
+        if (tag === 'script' && el.getAttribute('src')) {
+          return `${pad}（ｊｓ、ファイル は「${el.getAttribute('src')}」。）`;
+        }
+
+        const hTag = REVERSE_TAG[tag] || tag;
+        const parts = [hTag];
+
+        if (tag === 'html' && el.getAttribute('lang')) {
+          const l = el.getAttribute('lang');
+          parts.push(fmtAttr('言語', LANG_REV[l] || l));
+        } else if (tag === 'meta') {
+          if (el.getAttribute('charset')) parts.push(fmtAttr('文字', el.getAttribute('charset')));
+          if (el.getAttribute('name')) parts.push(fmtAttr('名', el.getAttribute('name')));
+          if (el.getAttribute('content')) parts.push(fmtAttr('内容', el.getAttribute('content')));
+        } else if (tag === 'a' && el.getAttribute('href')) {
+          parts.push(fmtAttr('アドレス', el.getAttribute('href')));
+        } else if (tag === 'img') {
+          if (el.getAttribute('src')) parts.push(fmtAttr('ファイル', el.getAttribute('src')));
+          if (el.getAttribute('alt') !== null) parts.push(fmtAttr('テキスト', el.getAttribute('alt')));
+        } else if (tag === 'blockquote' && el.getAttribute('cite')) {
+          parts.push(fmtAttr('出所', el.getAttribute('cite')));
+        } else if (tag === 'input' || tag === 'button') {
+          if (el.getAttribute('type')) parts.push(fmtAttr('種類', TYPE_REV[el.getAttribute('type')] || el.getAttribute('type')));
+          if (el.getAttribute('name')) parts.push(fmtAttr('名', el.getAttribute('name')));
+          if (el.getAttribute('placeholder')) parts.push(fmtAttr('案内', el.getAttribute('placeholder')));
+          if (el.getAttribute('value')) parts.push(fmtAttr('値', el.getAttribute('value')));
+        } else if (tag === 'ruby') {
+          const rt = el.querySelector('rt');
+          if (rt) parts.push(fmtAttr('振', rt.textContent.trim()));
+        } else if (tag === 'details') {
+          const sum = el.querySelector('summary');
+          if (sum) parts.push(fmtAttr('見出し', sum.textContent.trim()));
+        }
+
+        const cls = el.getAttribute('class');
+        if (cls) {
+          if (tag === 'body' && cls.split(/\s+/).includes('htmj-vertical')) {
+            parts.push('縦書き');
+          } else {
+            parts.push(fmtAttr('クラス', cls));
+          }
+        }
+        if (el.getAttribute('id')) parts.push(fmtAttr('識別子', el.getAttribute('id')));
+
+        if (VOID_TAGS.has(tag)) {
+          return `${pad}（${parts.join('、')}。）`;
+        }
+
+        if (tag === 'style' || tag === 'script') {
+          const code = el.textContent.trim();
+          if (!code) return `${pad}（${parts.join('、')}、）（終、${hTag}。）`;
+          return `${pad}（${parts.join('、')}、）\n${code}\n${pad}（終、${hTag}。）`;
+        }
+
+        const childrenOut = [];
+        el.childNodes.forEach((child) => {
+          if (child.nodeType === 3) {
+            const t = child.textContent.replace(/\s+/g, ' ').trim();
+            if (t) childrenOut.push(`${'  '.repeat(depth + 1)}${t}`);
+          } else if (child.nodeType === 1) {
+            const cTag = child.tagName.toLowerCase();
+            if ((tag === 'ruby' && cTag === 'rt') || (tag === 'details' && cTag === 'summary')) return;
+            childrenOut.push(convertEl(child, depth + 1));
+          }
+        });
+
+        if (childrenOut.length === 0) {
+          return `${pad}（${parts.join('、')}、）（終、${hTag}。）`;
+        }
+        if (childrenOut.length === 1 && !childrenOut[0].includes('\n') && childrenOut[0].trim().length < 40) {
+          return `${pad}（${parts.join('、')}、）${childrenOut[0].trim()}（終、${hTag}。）`;
+        }
+        return `${pad}（${parts.join('、')}、）\n${childrenOut.join('\n')}\n${pad}（終、${hTag}。）`;
+      }
+
+      const lines = ['（文書タイプ、「htmj」！）'];
+      if (doc.documentElement) {
+        lines.push(convertEl(doc.documentElement, 0));
+      }
+      return lines.join('\n');
+    }
+
+    htmlImport.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const htmlText = String(ev.target.result || '');
+        htmjInput.value = htmlToHtmj(htmlText);
+        updateLineNumbersAndStats();
+        updateCursorPos();
+        updateSmartCloseAndSuggest();
+        runCompile();
+        showToast(`${file.name} を HTMJ に変換して読み込みました`);
+      };
+      reader.readAsText(file, 'UTF-8');
+      e.target.value = '';
+    });
+
+    // Sample selector
+    sampleSelect.addEventListener('change', () => {
+      const key = sampleSelect.value;
+      if (SAMPLES[key]) {
+        htmjInput.value = SAMPLES[key];
+        updateLineNumbersAndStats();
+        updateCursorPos();
+        runCompile();
+        showToast('サンプルを読み込みました');
+      }
+    });
+
+    // Import .htmj / .txt file
+    fileImport.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        htmjInput.value = String(ev.target.result || '');
+        updateLineNumbersAndStats();
+        updateCursorPos();
+        runCompile();
+        showToast(`${file.name} を読み込みました`);
+      };
+      reader.readAsText(file, 'UTF-8');
+      e.target.value = '';
+    });
+
+    // Reference Drawer
+    btnToggleRef.addEventListener('click', () => refDrawer.classList.toggle('hidden'));
+    btnCloseRef.addEventListener('click', () => refDrawer.classList.add('hidden'));
+
+    // Draggable Split Pane Resizer
+    const splitResizer = document.getElementById('splitResizer');
+    const workspace = document.getElementById('workspace');
+    const editorPane = document.getElementById('editorPane');
+    const previewPane = document.getElementById('previewPane');
+
+    let isResizing = false;
+    splitResizer.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      isResizing = true;
+      splitResizer.classList.add('resizer-active');
+      previewFrame.style.pointerEvents = 'none';
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      const rect = workspace.getBoundingClientRect();
+      const offset = e.clientX - rect.left;
+      const pct = Math.max(20, Math.min(80, (offset / rect.width) * 100));
+      editorPane.style.flex = `0 0 ${pct}%`;
+      previewPane.style.flex = `1 1 ${100 - pct}%`;
+    });
+    window.addEventListener('mouseup', () => {
+      if (!isResizing) return;
+      isResizing = false;
+      splitResizer.classList.remove('resizer-active');
+      previewFrame.style.pointerEvents = 'auto';
+    });
+
+    // Initialize App
+    (function init() {
+      let saved = null;
+      try {
+        saved = localStorage.getItem(STORAGE_KEY);
+      } catch (e) { saved = null; }
+      htmjInput.value = saved !== null ? saved : '';
+      updateLineNumbersAndStats();
+      updateCursorPos();
+      updateSmartCloseAndSuggest();
+      runCompile();
+    })();
+  </script>
+</body>
+</html>
